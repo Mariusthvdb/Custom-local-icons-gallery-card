@@ -1,13 +1,18 @@
-const Name = "Custom-local-icons-gallery-card";
-const Version = "20260613";
-const Description = "Display icons from custom-local-icons Integration automatically";
+const name = "Custom local icons gallery card";
+const version = "1.0.1";
+const description = "Display icons from custom-local-icons Integration automatically";
 const Url = "https://github.com/Mariusthvdb/Custom-local-icons-gallery-card";
+const badgeStyle =
+  "color: white; background: linear-gradient(90deg, #41BDF5, #2C6ECB);" +
+  "padding: 2px 8px; font-weight: bold; border-radius: 0px;";
 
 // Log information about the custom-ui component
 console.groupCollapsed(
-  `%c ${Name} ${Version} is installed \n%c ${Description} `,
-  "color: gold; font-weight: bold; background: black",
-  "color: white; font-weight: bold; background: steelblue"),
+  `%c🏠🎨 ${name} is installed %c✨${version}`,
+  badgeStyle,
+  badgeStyle
+);
+console.log("💬", description);
 console.log("Readme:",Url),
 console.groupEnd()
 
