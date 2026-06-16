@@ -1,76 +1,111 @@
 const name = "Custom local icons gallery card";
-const version = "1.0.1";
-const description = "Display icons from custom-local-icons Integration automatically";
-const Url = "https://github.com/Mariusthvdb/Custom-local-icons-gallery-card";
+const version = "1.4.0";
+const description = "Lists all icons installed via C L I integration";
+const repo = "https://github.com/Mariusthvdb/Custom-local-icons-gallery-card";
 const badgeStyle =
   "color: white; background: linear-gradient(90deg, #41BDF5, #2C6ECB);" +
   "padding: 2px 8px; font-weight: bold; border-radius: 0px;";
 
-// Log information about the custom-ui component
 console.groupCollapsed(
-  `%c🏠🎨 ${name} is installed %c✨${version}`,
+  `%c🏠🎨 ${name} %c✨${version}`,
   badgeStyle,
   badgeStyle
 );
 console.log("💬", description);
-console.log("Readme:",Url),
-console.groupEnd()
+console.log("📄 Readme: %s", repo);
+console.groupEnd();
+
 
 class CustomLocalIconsGalleryCard extends HTMLElement {
+
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
 
     this.icons = [];
     this.filteredIcons = [];
-    this.selectedIndex = 0;
 
-    this.searchValue = "";
+    this.searchValue = localStorage.getItem("cli_search") || "";
+    this.colorMode = localStorage.getItem("cli_colorMode") !== "false";
+    this.density = localStorage.getItem("cli_density") || "ha";
 
-    this.colorMode = true; // ON = HA theme color, OFF = disabled color
-
-    this.favorites = new Set(
-      JSON.parse(localStorage.getItem("cli_favorites") || "[]"),
-    );
+    const raw = localStorage.getItem("cli_favorites");
+    this.favorites = raw ? JSON.parse(raw) : [];
 
     this.densities = {
-      compact:     { size: 20, min: 70,  gap: 8 },
-      ha:          { size: 24, min: 90,  gap: 10 },
-      comfortable: { size: 36, min: 140, gap: 12 },
-      large:       { size: 56, min: 200, gap: 14 },
-      ultra:       { size: 72, min: 260, gap: 18 },
+      cp: { size: 24, min: 80, gap: 6 }, //compact
+      cf: { size: 36, min: 90, gap: 8 }, //comfortable
+      lg: { size: 56, min: 120, gap: 8 }, //large
+      ul: { size: 72, min: 160, gap: 18 }, //ultra
     };
-
-    this.density = "ha";
 
     this.config = {
       title: "Custom Local Icons",
       url: "/custom_local_icons/list",
-
-      on_color:
-        "var(--state-icon-color, var(--primary-color))",
-
-      off_color:
-        "var(--disabled-text-color)",
+      on_color: "var(--state-icon-color, var(--primary-color))",
+      off_color: "var(--disabled-text-color)",
     };
 
-    console.log("[CLI] init");
+    this.translations = {
+      en: {
+        search: "Search icons...",
+        copied: "Copied",
+        no_icons: "No icons found",
+        icons: "icons",
+        clear_favorites: "Clear favorites",
+        density_compact: "Compact",
+        density_comfortable: "Comfortable",
+        density_large: "Large",
+        density_ultra: "Ultra",
+      },
 
-    this._renderShell();
-    this._load();
+      nl: {
+        search: "Zoek iconen...",
+        copied: "Gekopieerd",
+        no_icons: "Geen iconen gevonden",
+        icons: "iconen",
+        clear_favorites: "Favorieten wissen",
+        density_compact: "Compact",
+        density_comfortable: "Comfortabel",
+        density_large: "Groot",
+        density_ultra: "Extra groot",
+      },
+
+      de: {
+        search: "Symbole suchen...",
+        copied: "Kopiert",
+        no_icons: "Keine Symbole gefunden",
+        icons: "Symbole",
+        clear_favorites: "Favoriten löschen",
+        density_compact: "Kompakt",
+        density_comfortable: "Komfortabel",
+        density_large: "Groß",
+        density_ultra: "Extra groß",
+      },
+    };
   }
 
-  // ---------------- LOAD ----------------
   async _load() {
     try {
       const res = await fetch(this.config.url);
-      this.icons = await res.json();
 
-      this.filteredIcons = [...this.icons];
+      const data = await res.json();
 
-      console.log("[CLI] loaded:", this.icons.length);
+      this.icons = data;
 
+      // één duidelijke sort stap
+      this.icons.sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+
+      if (this.searchValue) {
+        this._filter(this.searchValue);
+        return;
+      }
+
+      this.filteredIcons = this.icons;
       this._update();
+
     } catch (e) {
       console.error("[CLI] load failed", e);
     }
@@ -81,97 +116,74 @@ class CustomLocalIconsGalleryCard extends HTMLElement {
     this._load();
   }
 
-  // ---------------- FUZZY ----------------
-  _score(name, q) {
+  _normalize(s) {
+    return (s || "").toLowerCase().replace(/[\s_-]/g, "");
+  }
+
+  _score(n, q) {
     if (!q) return 1;
 
-    name = name.toLowerCase();
-    q = q.toLowerCase();
+    if (n === q) return 100;
+    // if (n.startsWith(q)) return 90;
+    if (n.includes(q)) return 80;
 
-    if (name === q) return 100;
-    if (name.includes(q)) return 80;
+    let score = 0, qi = 0, gap = 0;
 
-    let score = 0;
-    let qi = 0;
-
-    for (let i = 0; i < name.length; i++) {
-      if (name[i] === q[qi]) {
-        score += 2;
+    for (let i = 0; i < n.length && qi < q.length; i++) {
+      if (n[i] === q[qi]) {
+        score += 10 - (gap < 5 ? gap : 5);
         qi++;
-      }
-      if (qi >= q.length) break;
+        gap = 0;
+      } else gap++;
     }
 
     return qi === q.length ? score : 0;
   }
 
-  // ---------------- SEARCH ----------------
   _filter(value) {
-    const q = (value || "").trim().toLowerCase();
+    const raw = (value || "").trim().toLowerCase();
 
-    this.searchValue = q;
+    this.searchValue = raw;
+    localStorage.setItem("cli_search", raw);
 
-    if (!q) {
-      this.filteredIcons = [...this.icons];
-      this.selectedIndex = 0;
+    if (!raw) {
+      this.filteredIcons = this.icons;
       this._update();
       return;
     }
 
-    const results = this.icons
-      .map((icon) => ({
-        icon,
-        score: this._score(icon.name, q),
-      }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score);
+    const query = this._normalize(raw);
 
-    this.filteredIcons = results.map((r) => r.icon);
+    const results = [];
+    const icons = this.icons;
 
-    this.selectedIndex = 0;
+    for (let i = 0; i < icons.length; i++) {
+      const icon = icons[i];
+      const score = this._score(icon.name, query);
 
-    console.log("[CLI] filtered:", this.filteredIcons.length);
-
-    this._update();
-  }
-
-  // ---------------- FAVORITES ----------------
-  _toggleFavorite(name) {
-    if (this.favorites.has(name)) {
-      this.favorites.delete(name);
-    } else {
-      this.favorites.add(name);
+      if (score > 0) {
+        results.push({ icon, score });
+      }
     }
 
-    localStorage.setItem(
-      "cli_favorites",
-      JSON.stringify([...this.favorites]),
+    results.sort((a, b) =>
+      b.score - a.score ||
+      a.icon.name.localeCompare(b.icon.name)
     );
 
-    console.log("[CLI] favorite:", name);
+    const out = new Array(results.length);
 
+    for (let i = 0; i < results.length; i++) {
+      out[i] = results[i].icon;
+    }
+
+    this.filteredIcons = out;
     this._update();
   }
 
-  _clearFavorites() {
-    this.favorites.clear();
-    localStorage.removeItem("cli_favorites");
-
-    console.log("[CLI] favorites cleared");
-
-    this._update();
-  }
-
-  // ---------------- DENSITY ----------------
-  _cfg() {
-    return this.densities[this.density];
-  }
-
-  // ---------------- COPY ----------------
   async _copy(text) {
     try {
       await navigator.clipboard.writeText(text);
-      console.log("[CLI] copy:", text);
     } catch {
       const ta = document.createElement("textarea");
       ta.value = text;
@@ -180,383 +192,547 @@ class CustomLocalIconsGalleryCard extends HTMLElement {
       document.execCommand("copy");
       ta.remove();
     }
+    this._showToast(text);
   }
 
-  // ---------------- UI ----------------
+  _showToast(text) {
+    const t = this.shadowRoot.querySelector("#toast");
+    t.textContent = `${this.t("copied")}: ${text}`;
+    t.classList.add("show");
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => t.classList.remove("show"), 1200);
+  }
+
+  _isFavorite(name) {
+    return this.favorites.includes(name);
+  }
+
+  _toggleFavorite(name) {
+    if (this._isFavorite(name)) {
+      this.favorites = this.favorites.filter(n => n !== name);
+    } else {
+      this.favorites = [...this.favorites, name];
+    }
+    localStorage.setItem("cli_favorites", JSON.stringify(this.favorites));
+    this._update();
+  }
+
+  get language() {
+    return this._hass?.language || "en";
+  }
+
+  set hass(hass) {
+    const firstRun = !this._hass;
+    const oldLang = this._hass?.language;
+
+    this._hass = hass;
+
+    if (firstRun || oldLang !== hass.language) {
+      this._renderShell();
+      this._update();
+    }
+  }
+
+  t(key) {
+    return (
+      this.translations[this.language]?.[key] ||
+      this.translations.en?.[key] ||
+      key
+    );
+  }
+
   _renderShell() {
     this.shadowRoot.innerHTML = `
-      <ha-card header="${this.config.title}">
-        <div class="wrapper">
+      <ha-card>
 
-          <!-- ROW 1: SEARCH -->
-          <div class="search-row">
-            <input id="search" placeholder="Search icons..." />
+        <div class="card-header">${this.config.title}</div>
+
+        <div class="card-content">
+
+          <div class="wrapper">
+
+            <div class="top-row">
+              <div class="search-container">
+                <ha-icon icon="mdi:magnify" class="search-icon"></ha-icon>
+                <input id="search" placeholder="${this.t("search")}">
+                <button id="clearSearch" class="clear-btn">
+                  <ha-icon icon="mdi:close"></ha-icon>
+                </button>
+              </div>
+
+              <button id="colorToggle" class="toggle-btn">
+                <ha-icon icon="mdi:toggle-switch"></ha-icon>
+              </button>
+
+              <div class="density-select-wrapper">
+                <select id="density" class="density-select">
+                  <option value="cp">${this.t("density_compact")}</option>
+                  <option value="cf">${this.t("density_comfortable")}</option>
+                  <option value="lg">${this.t("density_large")}</option>
+                  <option value="ul">${this.t("density_ultra")}</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="count"></div>
+            <div class="grid"></div>
+
+            <div id="toast" class="toast"></div>
+
           </div>
-
-          <!-- ROW 2: CONTROLS -->
-          <div class="controls-row">
-
-            <select id="density">
-              <option value="compact">Compact</option>
-              <option value="ha" selected>HA (24px)</option>
-              <option value="comfortable">Comfortable</option>
-              <option value="large">Large</option>
-              <option value="ultra">Ultra</option>
-            </select>
-
-            <!-- REAL SWITCH -->
-            <label class="switch">
-              <input type="checkbox" id="colorSwitch" checked>
-              <span class="slider"></span>
-              <span class="labelText">Theme color</span>
-            </label>
-
-            <button id="clearFav">🧹 Clear</button>
-
-          </div>
-
-          <!-- FAVORITES -->
-          <div class="favorites-bar">
-            <div class="fav-title">⭐ Favorites</div>
-            <div class="fav-list"></div>
-          </div>
-
-          <div class="count"></div>
-          <div class="grid"></div>
 
         </div>
 
-        <style>
-          .wrapper {
-            padding: 12px;
-            box-sizing: border-box;
-          }
+        <!-- FOOTER / ACTIONS -->
+          <div class="card-actions">
 
-          .search-row input {
-            width: 100%;
-            padding: 8px;
-            box-sizing: border-box;
-          }
+            <div class="favorites-footer">
+              <div class="favorites-row-footer"></div>
+            </div>
 
-          .controls-row {
-            display: flex;
-            gap: 10px;
-            margin-top: 8px;
-            align-items: center;
-          }
+            <button id="clearFavorites" class="clear-fav-btn">
+              <ha-icon icon="mdi:star-off"></ha-icon>
+            </button>
 
-          .controls-row select,
-          .controls-row button {
-            height: 32px;
-          }
+            <div class="version">v${version}</div>
 
-          /* ---------------- SWITCH ---------------- */
-          .switch {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            user-select: none;
-          }
+          </div>
 
-          .switch input {
-            display: none;
-          }
-
-          .slider {
-            width: 34px;
-            height: 18px;
-            background: var(--disabled-text-color);
-            border-radius: 999px;
-            position: relative;
-            cursor: pointer;
-            transition: 0.2s;
-          }
-
-          .slider::after {
-            content: "";
-            width: 14px;
-            height: 14px;
-            position: absolute;
-            top: 2px;
-            left: 2px;
-            background: white;
-            border-radius: 50%;
-            transition: 0.2s;
-          }
-
-          .switch input:checked + .slider {
-            background: var(--primary-color);
-          }
-
-          .switch input:checked + .slider::after {
-            transform: translateX(16px);
-          }
-
-          .labelText {
-            font-size: 12px;
-          }
-
-          /* ---------------- GRID ---------------- */
-          .grid {
-            display: grid;
-            gap: 10px;
-            max-height: 350px;
-            overflow-y: auto;
-          }
-
-          .icon {
-            position: relative;
-            text-align: center;
-            padding: 10px;
-            border-radius: 12px;
-            cursor: pointer;
-          }
-
-
-
-          .star {
-            position: absolute;
-            top: 6px;
-            right: 8px;
-            opacity: 0.3;
-            cursor: pointer;
-          }
-
-          .star.active {
-            opacity: 1;
-            color: gold;
-          }
-
-          /* MASK ICON */
-          .icon-img {
-            display: inline-block;
-            background-color: var(--primary-color);
-            -webkit-mask-repeat: no-repeat;
-            mask-repeat: no-repeat;
-            -webkit-mask-position: center;
-            mask-position: center;
-            -webkit-mask-size: contain;
-            mask-size: contain;
-          }
-
-          .label {
-            font-size: 12px;
-            margin-top: 8px;
-            word-break: break-word;
-          }
-
-
-          .favorites-bar {
-            margin-top: 10px;
-            margin-bottom: 10px;
-
-            padding: 8px;
-
-            background: rgba(127,127,127,0.08);
-
-            border-radius:
-              var(--ha-card-border-radius, 12px);
-          }
-
-          .fav-title {
-            font-size: 12px;
-            opacity: 0.7;
-            margin-bottom: 6px;
-          }
-
-          .fav-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-          }
-
-          .fav-item {
-            cursor: pointer;
-
-            padding: 4px 8px;
-
-            border-radius: 8px;
-
-            background:
-              rgba(255,215,0,0.15);
-
-            font-size: 12px;
-          }
-        </style>
       </ha-card>
+
+      <style>
+        .card-header {
+          background: var(--card-header-background);
+          color: var(--card-header-color);
+
+          padding: 8px 12px;
+          font-size: 20px;
+          height: 40px;
+
+          display: flex;
+          align-items: center;
+          font-weight: 600;
+
+          border-top-left-radius: var(--ha-card-border-radius);
+          border-top-right-radius: var(--ha-card-border-radius);
+        }
+
+        .card-content {
+          padding: 0;
+        }
+
+        .card-actions {
+          display: flex;
+          align-items: center;
+
+          padding: 6px 12px 8px;
+          gap: 8px;
+        }
+
+        .favorites-row-footer {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .wrapper {
+          padding: 8px;
+          position: relative;
+        }
+
+        .version {
+          text-align: right;
+          opacity: 0.5;
+          font-size: 11px;
+          color: white;
+          background: linear-gradient(90deg, #41BDF5, #2C6ECB);
+          padding: 2px 8px;
+          font-weight: bold;
+          border-radius: 0px;
+        }
+
+        .top-row {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+          flex-wrap: wrap;
+        }
+
+        .search-container {
+          display: flex;
+          flex: 1 1 auto;
+          gap: 6px;
+          align-items: center;
+          position: relative;
+          min-width: 120px;
+        }
+
+        .search-icon {
+          position: absolute;
+          left: 10px;
+          pointer-events: none;
+          color: var(--secondary-text-color);
+        }
+
+        .search-container input {
+          color: var(--primary-text-color);
+          flex: 1 1 auto;
+          height: 36px;
+          padding: 0 10px 0 34px;
+          border-radius: var(--ha-card-border-radius);
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+        }
+
+        .clear-btn,
+        .toggle-btn {
+          height: 36px;
+          width: 36px;
+          border-radius: var(--ha-card-border-radius);
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-color);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .density-select-wrapper { position: relative; }
+
+        .density-select {
+          height: 36px;
+          padding: 0 34px 0 10px;
+          border-radius: var(--ha-card-border-radius);
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          appearance: none;
+          cursor: pointer;
+        }
+
+        .density-select-wrapper::after {
+          content: "";
+          position: absolute;
+          right: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          border-left: 6px solid transparent;
+          border-right: 6px solid transparent;
+          border-top: 6px solid var(--secondary-text-color);
+          pointer-events: none;
+        }
+
+        .no-icons {
+          white-space: nowrap;
+          text-align: center;
+          opacity: 0.6;
+          color: var(--error-color);
+        }
+
+        .favorites-footer {
+          display: flex;
+          flex: 1;
+          overflow-x: auto;
+        }
+
+        .favorites-row-footer {
+          display: flex;
+          gap: 6px;
+          align-items: center;
+        }
+
+        .clear-fav-btn {
+          height: 24px;
+          width: 24px;
+          border-radius: var(--ha-card-border-radius);
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          display: none;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+
+        .clear-fav-btn ha-icon {
+          color: gold;
+        }
+
+        .clear-fav-btn:hover {
+          background: red;
+          transition: background 0.15s ease;
+        }
+
+        .favorite-chip {
+          cursor: copy;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          border-radius: 999px;
+          background: rgba(127,127,127,0.08);
+          border: 1px solid var(--divider-color);
+          font-size: 12px;
+        }
+
+        .chip-icon {
+          width: 20px;
+          height: 20px;
+          /*cursor: pointer;*/
+          display: inline-block;
+        }
+
+        .chip-icon:hover {
+          opacity: 0.7;
+          cursor: zoom-out;
+          transform: scale(1.15);
+        }
+
+        .grid {
+          display: grid;
+          gap: 10px;
+          max-height: 350px;
+          overflow-y: auto;
+          margin-top: 10px;
+        }
+
+        .icon {
+          position: relative;
+          text-align: center;
+          padding: 12px;
+
+          cursor: pointer;
+        }
+
+        .icon:hover {
+          background: rgba(127,127,127,0.08);
+          transition: background 0.15s ease;
+        }
+
+        .icon:active {
+          background: rgba(127,127,127,0.18);
+          transform: scale(0.97);
+          transition: transform 0.05s ease;
+        }
+
+        .favorite-toggle {
+          position: absolute;
+          top: 2px;
+          right: 24px;
+          width: 10px;
+          height: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: none;
+        }
+
+        .favorite-toggle ha-icon {
+          width: 10px;
+          height: 10px;
+          color: gold;
+        }
+
+        .favorite-toggle.active ha-icon {
+          /*color: var(--state-icon-color, var(--primary-color));*/
+        }
+
+        .icon-img {
+          display: inline-block;
+          -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+          -webkit-mask-position: center;
+          mask-position: center;
+          -webkit-mask-size: contain;
+          mask-size: contain;
+        }
+
+        .label {
+          font-size: 12px;
+          margin-top: 8px;
+          word-break: break-word;
+        }
+
+        .count {
+          margin-top: 4px;
+          font-size: 12px;
+          opacity: 0.7;
+        }
+
+        .toast {
+          position: absolute;
+          bottom: 12px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: var(--primary-background-color);
+          color: var(--primary-text-color);
+          padding: 6px 14px;
+          border-radius: var(--ha-card-border-radius);
+          font-size: 12px;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.25s ease;
+        }
+
+        .toast.show {
+          opacity: 1;
+        }
+      </style>
     `;
 
-    // ---------------- SEARCH ----------------
-    const search = this.shadowRoot.querySelector("#search");
+    const searchInput = this.shadowRoot.querySelector("#search");
+    searchInput.value = this.searchValue;
+    searchInput.addEventListener("input", e => this._filter(e.target.value));
 
-    search.addEventListener("input", (e) =>
-      this._filter(e.target.value),
-    );
+    this.shadowRoot.querySelector("#clearSearch")
+      .addEventListener("click", () => {
+        searchInput.value = "";
+        localStorage.removeItem("cli_search");
+        this._filter("");
+      });
 
-    // ---------------- CONTROLS ----------------
-    const density = this.shadowRoot.querySelector("#density");
-    const colorSwitch =
-      this.shadowRoot.querySelector("#colorSwitch");
-    const clearFav =
-      this.shadowRoot.querySelector("#clearFav");
-
-    density.addEventListener("change", (e) => {
+    const densitySelect = this.shadowRoot.querySelector("#density");
+    densitySelect.value = this.density;
+    densitySelect.addEventListener("change", e => {
       this.density = e.target.value;
-      console.log("[CLI] density:", this.density);
+      localStorage.setItem("cli_density", this.density);
       this._update();
     });
 
-    colorSwitch.addEventListener("change", (e) => {
-      this.colorMode = e.target.checked;
-      console.log("[CLI] colorMode:", this.colorMode);
+    const toggleBtn = this.shadowRoot.querySelector("#colorToggle");
+
+    toggleBtn.style.color = this.colorMode
+      ? this.config.on_color
+      : this.config.off_color;
+
+    toggleBtn.querySelector("ha-icon")
+      .setAttribute("icon",
+        this.colorMode ? "mdi:toggle-switch" : "mdi:toggle-switch-off"
+      );
+
+    toggleBtn.addEventListener("click", () => {
+      this.colorMode = !this.colorMode;
+      localStorage.setItem("cli_colorMode", this.colorMode);
+
+      toggleBtn.style.color = this.colorMode
+        ? this.config.on_color
+        : this.config.off_color;
+
+      toggleBtn.querySelector("ha-icon")
+        .setAttribute("icon",
+          this.colorMode ? "mdi:toggle-switch" : "mdi:toggle-switch-off"
+        );
+
       this._update();
     });
 
-    clearFav.addEventListener("click", () =>
-      this._clearFavorites(),
-    );
+    this.shadowRoot.querySelector("#clearFavorites")
+      .addEventListener("click", () => {
+        this.favorites = [];
+        localStorage.setItem("cli_favorites", "[]");
+        this._update();
+      });
   }
 
-  // ---------------- UPDATE ----------------
   _update() {
-    const cfg = this._cfg();
-
-    const grid =
-      this.shadowRoot.querySelector(".grid");
-    const favList =
-      this.shadowRoot.querySelector(".fav-list");
-    const count =
-      this.shadowRoot.querySelector(".count");
-
-    if (!grid) return;
+    const cfg = this.densities[this.density];
+    const grid = this.shadowRoot.querySelector(".grid");
+    const count = this.shadowRoot.querySelector(".count");
+    const favRow = this.shadowRoot.querySelector(".favorites-row-footer");
+    const clearBtn = this.shadowRoot.querySelector("#clearFavorites");
 
     grid.style.gridTemplateColumns =
       `repeat(auto-fill, minmax(${cfg.min}px, 1fr))`;
-
     grid.style.gap = `${cfg.gap}px`;
 
-    favList.innerHTML = [...this.favorites]
-      .map(
-        (n) => `
-          <div
-            class="fav-item"
-            data-name="${n}"
-          >
-            ${n}
+    if (this.favorites.length > 0) {
+      clearBtn.style.display = "flex";
+
+      favRow.innerHTML = this.favorites
+        .map(name => `
+          <div class="favorite-chip" data-name="${name}">
+            <div class="chip-icon"
+              style="
+                background-color:${this.colorMode ? this.config.on_color : this.config.off_color};
+                -webkit-mask-image:url('/custom_local_icons/icons/${name}.svg');
+                mask-image:url('/custom_local_icons/icons/${name}.svg');
+              "
+            ></div>
+            <span>${name}</span>
           </div>
-        `,
-      )
-      .join("");
+        `)
+        .join("");
 
-    favList.querySelectorAll(".fav-item").forEach((el) => {
-      el.addEventListener("click", () =>
-        this._copy(el.dataset.name),
-      );
-    });
+      favRow.querySelectorAll(".favorite-chip").forEach(el => {
+        el.addEventListener("click", () => this._copy(el.dataset.name));
+      });
 
-    // EMPTY STATE FIX
+      favRow.querySelectorAll(".chip-icon").forEach(el => {
+        el.addEventListener("click", e => {
+          e.stopPropagation();
+
+          const name = el.parentElement.dataset.name;
+          this._toggleFavorite(name);
+        });
+      });
+
+    } else {
+      favRow.innerHTML = "";
+      clearBtn.style.display = "none";
+    }
+
     if (this.filteredIcons.length === 0) {
       grid.innerHTML = `
-        <div style="padding:20px;text-align:center;opacity:0.6;">
-          No icons found
-        </div>
-      `;
-      count.textContent = "0 icons";
+        <div class="no-icons">
+          ${this.t("no_icons")}
+        </div>`;
+      count.textContent = `0 ${this.t("icons")}`;
       return;
     }
 
     count.textContent =
-      `${this.filteredIcons.length} icons`;
+      `${this.filteredIcons.length} ${this.t("icons")}`;
 
     const size = cfg.size;
 
     grid.innerHTML = this.filteredIcons
-      .map((icon, i) => `
-        <div
-          class="icon"
-          data-name="${icon.name}"
-        >
+      .map(icon => `
+        <div class="icon" data-name="${icon.name}">
+          <div class="favorite-toggle ${this._isFavorite(icon.name) ? "active" : ""}" data-name="${icon.name}">
+            <ha-icon icon="${this._isFavorite(icon.name) ? "mdi:star" : "mdi:star-outline"}"></ha-icon>
+          </div>
 
-          <div class="star ${
-            this.favorites.has(icon.name) ? "active" : ""
-          }">★</div>
-
-          <!-- MASK ICON (THEME CORRECT) -->
-          <div
-            class="icon-img"
+          <div class="icon-img"
             style="
               width:${size}px;
               height:${size}px;
-
-              background-color:${
-                this.colorMode
-                  ? this.config.on_color
-                  : this.config.off_color
-              };
-
-              -webkit-mask-image:
-                url('/custom_local_icons/icons/${icon.name}.svg');
-
-              mask-image:
-                url('/custom_local_icons/icons/${icon.name}.svg');
+              background-color:${this.colorMode ? this.config.on_color : this.config.off_color};
+              -webkit-mask-image:url('/custom_local_icons/icons/${icon.name}.svg');
+              mask-image:url('/custom_local_icons/icons/${icon.name}.svg');
             "
-          >
-            <img
-              src="/custom_local_icons/icons/${icon.name}.svg"
-              width="${size}"
-              height="${size}"
-              loading="lazy"
-            >
-          </div>
+          ></div>
 
           <div class="label">${icon.name}</div>
         </div>
       `)
       .join("");
 
-    grid.querySelectorAll(".icon-img")
-      .forEach((el) => {
-        const img =
-          el.querySelector("img");
-
-        const style =
-          getComputedStyle(el);
-
-        const mask =
-          style.webkitMaskImage ||
-          style.maskImage;
-
-        if (
-          mask &&
-          mask !== "none"
-        ) {
-          img.style.display = "none";
-        }
-      });
-
-    grid.querySelectorAll(".icon").forEach((el) => {
-      el.addEventListener("click", () =>
-        this._copy(el.dataset.name),
-      );
+    grid.querySelectorAll(".icon").forEach(el => {
+      el.addEventListener("click", () => this._copy(el.dataset.name));
     });
 
-    grid.querySelectorAll(".star").forEach((el) => {
-      el.addEventListener("click", (e) => {
+    grid.querySelectorAll(".favorite-toggle").forEach(el => {
+      el.addEventListener("click", e => {
         e.stopPropagation();
-        this._toggleFavorite(
-          el.closest(".icon").querySelector(".label")
-            .textContent,
-        );
+        this._toggleFavorite(el.dataset.name);
       });
     });
   }
 
-  getCardSize() {
-    return 10;
-  }
+  getCardSize() { return 10; }
 }
 
 customElements.define(
   "custom-local-icons-gallery-card",
-  CustomLocalIconsGalleryCard,
+  CustomLocalIconsGalleryCard
 );
