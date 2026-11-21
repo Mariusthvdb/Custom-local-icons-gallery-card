@@ -2,7 +2,7 @@
  *  METADATA
  * ───────────────────────────────────────────────────────────── */
 const name = "Custom local icons gallery card";
-const version = "1.7.5";
+const version = "1.7.6";
 const description = "Lists all icons installed via C L I integration";
 const repo = "https://github.com/Mariusthvdb/Custom-local-icons-gallery-card";
 const badgeStyle =
