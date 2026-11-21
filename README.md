@@ -78,27 +78,37 @@ icon: mdi:palette
 
 ## Troubleshooting
 
-If the card does not display any icons:
+### The card does not appear
 
-1. Verify that the Custom Local Icons integration is installed and working.
-2. Check that the integration has loaded the icons successfully.
-3. Open your browser's developer console.
-4. Look for the **Custom local icons gallery card** entry in the console.
+- Verify that the card has been installed through Custom Marketplace.
+- Make sure the Lovelace resource has been registered.
+- Reload the browser to ensure the latest JavaScript is loaded.
+- Check the browser developer console for JavaScript errors.
 
-The card logs its name, version and repository link when loaded.
+### The gallery is empty
 
-If you encounter problems, please open an issue in this repository.
+- Verify that the [Custom Local Icons integration](https://github.com/Mariusthvdb/custom_local_icons/) is installed and configured.
+- Check that the integration has successfully loaded your custom icons.
+- Make sure the integration is running and its API is accessible.
 
-## Check correct loading
+The gallery retrieves its icons directly from the integration; it does not load or manage icon files independently.
 
-Open Browser inspector console and look for Gallery card
+### Verify that the card has loaded correctly
+
+Open your browser's developer tools and select the **Console** tab.
+
+Look for the `Custom local icons gallery card` entry. The card logs its name, version and repository link when loaded.
 
 <img width="548" height="96" alt="Scherm­afbeelding 2026-06-16 om 14 42 45" src="https://github.com/user-attachments/assets/f64d5e9d-66ad-4ea3-a158-3d26f3a71c4b" />
 
-
-click arrow to reveal description and link to this repository
+Expand the console entry using the arrow to inspect the additional information and repository link.
 
 <img width="546" height="74" alt="Scherm­afbeelding 2026-06-16 om 14 42 58" src="https://github.com/user-attachments/assets/2f8196a3-3c24-4e32-b2c0-6ecc9517a50b" />
+
+### Still having problems?
+
+If the problem persists, please [open an issue](https://github.com/Mariusthvdb/Custom-local-icons-gallery-card/issues) and include any relevant errors from your browser console.
+
 
 ## Credits
 
